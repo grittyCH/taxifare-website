@@ -30,8 +30,7 @@ def geocode_ny_address(address: str):
         "q": f"{address}, New York, USA",
         "limit": 1,
         "lat": 40.7128,
-        "lon": -74.0060,
-    }
+        "lon": -74.0060}
     headers = {'User-Agent': 'taxifare-app/1.0'}
 
     try:
@@ -88,52 +87,7 @@ if submitted:
 
     ride_df = pd.DataFrame([
         {"label": "Pickup", "lat": pickup_latitude, "lon": pickup_longitude, "color": [230, 57, 70]},
-        {"label": "Dropoff", "lat": dropoff_latitude, "lon": dropoff_longitude, "color": [29, 185, 84]},
-    ])
-
-    st.dataframe(ride_df)
-    center_lat = (pickup_latitude + dropoff_latitude) / 2
-    center_lon = (pickup_longitude + dropoff_longitude) / 2
-    zoom = zoom_from_points(
-        pickup_latitude,
-        pickup_longitude,
-        dropoff_latitude,
-        dropoff_longitude,
-    )
-
-    layers = [
-        pdk.Layer(
-            "ScatterplotLayer",
-            data=ride_df,
-            get_position='[lon, lat]',
-            get_fill_color='color',
-            get_radius=90,
-            radius_min_pixels=7,
-        ),
-        pdk.Layer(
-            "TextLayer",
-            data=ride_df,
-            get_position='[lon, lat]',
-            get_text='label',
-            get_color='[20, 20, 20]',
-            get_size=16,
-            get_alignment_baseline="'top'",
-        ),
-    ]
-
-    st.pydeck_chart(
-        pdk.Deck(
-            layers=layers,
-            initial_view_state=pdk.ViewState(
-                latitude=center_lat,
-                longitude=center_lon,
-                zoom=zoom,
-                pitch=0,
-            ),
-            map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
-            tooltip={"text": "{label}"},
-        )
-    )
+        {"label": "Dropoff", "lat": dropoff_latitude, "lon": dropoff_longitude, "color": [29, 185, 84]} ])
 
     url = 'https://taxifare.lewagon.ai/predict'
     params = {
@@ -142,8 +96,7 @@ if submitted:
         'pickup_latitude': pickup_latitude,
         'dropoff_longitude': dropoff_longitude,
         'dropoff_latitude': dropoff_latitude,
-        'passenger_count': int(pax_nbr),
-    }
+        'passenger_count': int(pax_nbr)}
     headers = {'Accept': 'application/json'}
 
     try:
@@ -154,3 +107,39 @@ if submitted:
         st.success(f'Estimated fare: ${fare:.2f}')
     except requests.RequestException:
         st.error('Could not estimate fare right now. Please try again.')
+
+    center_lat = (pickup_latitude + dropoff_latitude) / 2
+    center_lon = (pickup_longitude + dropoff_longitude) / 2
+    zoom = zoom_from_points(
+        pickup_latitude,
+        pickup_longitude,
+        dropoff_latitude,
+        dropoff_longitude,)
+
+    layers = [
+        pdk.Layer(
+            "ScatterplotLayer",
+            data=ride_df,
+            get_position='[lon, lat]',
+            get_fill_color='color',
+            get_radius=90,
+            radius_min_pixels=7),
+        pdk.Layer(
+            "TextLayer",
+            data=ride_df,
+            get_position='[lon, lat]',
+            get_text='label',
+            get_color='[20, 20, 20]',
+            get_size=16,
+            get_alignment_baseline="'top'",)]
+
+    st.pydeck_chart(
+        pdk.Deck(
+            layers=layers,
+            initial_view_state=pdk.ViewState(
+                latitude=center_lat,
+                longitude=center_lon,
+                zoom=zoom,
+                pitch=0),
+            map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+            tooltip={"text": "{label}"}))

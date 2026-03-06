@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 import requests
 
 from datetime import datetime
@@ -45,11 +46,14 @@ def geocode_ny_address(address: str):
     return lon, lat
 
 
-pu_address = st.text_input('street address at which we should pick you up :')
+pu_address = st.text_input('NYC street address at which we should pick you up :')
 pickup_longitude, pickup_latitude = geocode_ny_address(pu_address)
 
-do_address = st.text_input('street address at which we should drop you off :')
+do_address = st.text_input('NYC street address at which we should drop you off :')
 dropoff_longitude, dropoff_latitude = geocode_ny_address(do_address)
+
+ride_df = pd.DataFrame([{"point": "pickup",  "lat": pickup_latitude,  "lon": pickup_longitude},
+                        {"point": "dropoff", "lat": dropoff_latitude, "lon": dropoff_longitude}])
 
 pax_nbr = st.number_input('number of passengers :', min_value=1, max_value=8, step=1)
 
@@ -64,3 +68,10 @@ response = requests.get(url=url, params=params, headers=headers, timeout=15)
 result = response.json()
 fare = result.get('fare')
 st.success(f'Estimated fare: ${fare:.2f}')
+
+def get_map_data():
+    return pd.DataFrame(ride_df)
+
+map_df = get_map_data()
+
+st.map(map_df, size=20, zoom=15)

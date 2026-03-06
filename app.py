@@ -1,14 +1,14 @@
 import streamlit as st
 import pandas as pd
 import requests
+import pydeck as pdk
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
 from pathlib import Path
 
 LOGO_PATH = Path(__file__).parent / "assets" / "Logo_Red&Black.png"
-st.image(LOGO_PATH)
 st.set_page_config(page_title="Le Wagon Taxi", page_icon=str(LOGO_PATH), layout="centered")
+st.image(LOGO_PATH)
 
 '''
 ## lets you know upfront how much your ride should cost approximately
@@ -25,53 +25,132 @@ def geocode_ny_address(address: str):
     if not address.strip():
         return None
 
-    url = 'https://nominatim.openstreetmap.org/search'
+    url = "https://photon.komoot.io/api/"
     params = {
-        'q': f'{address}, New York, USA',
-        'format': 'json',
-        'limit': 1,
-        'countrycodes': 'us'
+        "q": f"{address}, New York, USA",
+        "limit": 1,
+        "lat": 40.7128,
+        "lon": -74.0060,
     }
     headers = {'User-Agent': 'taxifare-app/1.0'}
 
-    r = requests.get(url, params=params, headers=headers, timeout=10)
-    r.raise_for_status()
-    results = r.json()
-
-    if not results:
+    try:
+        r = requests.get(url, params=params, headers=headers, timeout=10)
+        r.raise_for_status()
+        features = r.json().get("features", [])
+    except requests.RequestException:
         return None
 
-    lat = float(results[0]['lat'])
-    lon = float(results[0]['lon'])
-    return lon, lat
+    if not features:
+        return None
+
+    lon, lat = features[0]["geometry"]["coordinates"]
+    return float(lon), float(lat)
 
 
-pu_address = st.text_input('NYC street address at which we should pick you up :')
-pickup_longitude, pickup_latitude = geocode_ny_address(pu_address)
+def zoom_from_points(lat1, lon1, lat2, lon2):
+    spread = max(abs(lat1 - lat2), abs(lon1 - lon2))
+    if spread < 0.003:
+        return 15
+    if spread < 0.007:
+        return 14
+    if spread < 0.015:
+        return 13
+    if spread < 0.03:
+        return 12
+    return 11
 
-do_address = st.text_input('NYC street address at which we should drop you off :')
-dropoff_longitude, dropoff_latitude = geocode_ny_address(do_address)
 
-ride_df = pd.DataFrame([{"point": "pickup",  "lat": pickup_latitude,  "lon": pickup_longitude},
-                        {"point": "dropoff", "lat": dropoff_latitude, "lon": dropoff_longitude}])
+with st.form("fare_form"):
+    pu_address = st.text_input('NYC street address at which we should pick you up :')
+    do_address = st.text_input('NYC street address at which we should drop you off :')
+    pax_nbr = st.number_input('number of passengers :', min_value=1, max_value=8, step=1)
+    submitted = st.form_submit_button('Estimate fare')
 
-pax_nbr = st.number_input('number of passengers :', min_value=1, max_value=8, step=1)
+if submitted:
+    if not pu_address.strip() or not do_address.strip():
+        st.warning('Please enter both pickup and dropoff addresses.')
+        st.stop()
 
-url = 'https://taxifare.lewagon.ai/predict'
-params = {'pickup_datetime': pickup_datetime,
-        'pickup_longitude': pickup_longitude, 'pickup_latitude': pickup_latitude,
-        'dropoff_longitude': dropoff_longitude, 'dropoff_latitude': dropoff_latitude,
-        'passenger_count': int(pax_nbr) }
-headers = {'Accept': 'application/json'}
+    pickup_coords = geocode_ny_address(pu_address)
+    dropoff_coords = geocode_ny_address(do_address)
 
-response = requests.get(url=url, params=params, headers=headers, timeout=15)
-result = response.json()
-fare = result.get('fare')
-st.success(f'Estimated fare: ${fare:.2f}')
+    if pickup_coords is None:
+        st.warning('Pickup address not found. Try a more precise NYC address.')
+        st.stop()
 
-def get_map_data():
-    return pd.DataFrame(ride_df)
+    if dropoff_coords is None:
+        st.warning('Dropoff address not found. Try a more precise NYC address.')
+        st.stop()
 
-map_df = get_map_data()
+    pickup_longitude, pickup_latitude = pickup_coords
+    dropoff_longitude, dropoff_latitude = dropoff_coords
 
-st.map(map_df, size=20, zoom=15)
+    ride_df = pd.DataFrame([
+        {"label": "Pickup", "lat": pickup_latitude, "lon": pickup_longitude, "color": [230, 57, 70]},
+        {"label": "Dropoff", "lat": dropoff_latitude, "lon": dropoff_longitude, "color": [29, 185, 84]},
+    ])
+
+    st.dataframe(ride_df)
+    center_lat = (pickup_latitude + dropoff_latitude) / 2
+    center_lon = (pickup_longitude + dropoff_longitude) / 2
+    zoom = zoom_from_points(
+        pickup_latitude,
+        pickup_longitude,
+        dropoff_latitude,
+        dropoff_longitude,
+    )
+
+    layers = [
+        pdk.Layer(
+            "ScatterplotLayer",
+            data=ride_df,
+            get_position='[lon, lat]',
+            get_fill_color='color',
+            get_radius=90,
+            radius_min_pixels=7,
+        ),
+        pdk.Layer(
+            "TextLayer",
+            data=ride_df,
+            get_position='[lon, lat]',
+            get_text='label',
+            get_color='[20, 20, 20]',
+            get_size=16,
+            get_alignment_baseline="'top'",
+        ),
+    ]
+
+    st.pydeck_chart(
+        pdk.Deck(
+            layers=layers,
+            initial_view_state=pdk.ViewState(
+                latitude=center_lat,
+                longitude=center_lon,
+                zoom=zoom,
+                pitch=0,
+            ),
+            map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+            tooltip={"text": "{label}"},
+        )
+    )
+
+    url = 'https://taxifare.lewagon.ai/predict'
+    params = {
+        'pickup_datetime': pickup_datetime.isoformat(),
+        'pickup_longitude': pickup_longitude,
+        'pickup_latitude': pickup_latitude,
+        'dropoff_longitude': dropoff_longitude,
+        'dropoff_latitude': dropoff_latitude,
+        'passenger_count': int(pax_nbr),
+    }
+    headers = {'Accept': 'application/json'}
+
+    try:
+        response = requests.get(url=url, params=params, headers=headers, timeout=15)
+        response.raise_for_status()
+        result = response.json()
+        fare = result.get('fare')
+        st.success(f'Estimated fare: ${fare:.2f}')
+    except requests.RequestException:
+        st.error('Could not estimate fare right now. Please try again.')

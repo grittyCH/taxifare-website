@@ -143,3 +143,5 @@ if submitted:
                 pitch=0),
             map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
             tooltip={"text": "{label}"}))
+
+    st.balloons()
